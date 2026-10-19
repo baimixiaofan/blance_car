@@ -2,6 +2,7 @@
 #define MOTOR_TEST_H
 
 #include "stm32f1xx_hal.h"
+#include "app_config.h"
 
 /*
  * 硬件连接与 CubeMX 配置（与《引脚配置.md》一致）：
@@ -32,7 +33,7 @@ typedef enum
 /* 0 = 自动循环：正转 30/60/90%，反转 30/60/90%，每档保持 5 s
  * 1 = 固定状态：按下面的固定参数一直输出，适合慢慢拍照
  * 也可以在编译命令里加 -DMOTOR_TEST_MODE=1 覆盖此默认值。 */
-#ifndef MOTOR_TEST_MODE
+#ifndef MOTOR_TEST_MODE                0
 #define MOTOR_TEST_MODE                0
 #endif
 
@@ -46,16 +47,8 @@ typedef enum
 #define MOTOR_TEST_DUTY_2_PERCENT      60U
 #define MOTOR_TEST_DUTY_3_PERCENT      90U
 
-/* 单路测试开关：
- * 某一路不接电机或暂时不测时，把对应宏改成 0，程序会一直把它保持在停止状态；
- * 该路的方向线保持低电平，PWM 占空比固定为 0（引脚为低，不会输出脉冲）。
- * 当前默认只驱动左电机（右电机已停用），恢复双电机测试时把右电机改为 1。 */
-#ifndef MOTOR_TEST_USE_LEFT_MOTOR
-#define MOTOR_TEST_USE_LEFT_MOTOR      1
-#endif
-#ifndef MOTOR_TEST_USE_RIGHT_MOTOR
-#define MOTOR_TEST_USE_RIGHT_MOTOR     0
-#endif
+/* 左右电机使能由 app_config.h 统一控制，默认两路都使能。
+ * 手动计圈模式下即使使能，电机也保持方向停止、占空比 0，不会转动。 */
 
 /* 固定模式参数（仅 MOTOR_TEST_MODE == 1 时生效）
  * 例：只拍右电机反转 60%、左电机停：

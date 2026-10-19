@@ -46,3 +46,9 @@
 729	920	8141330294470366	car.elf	9bfe8e80e743be10
 9	211	8141330735421432	CMakeFiles/car.dir/Core/Src/encoder_test.c.obj	9503cc1e1753d38f
 211	397	8141330737192420	car.elf	9bfe8e80e743be10
+10	185	8141334794803044	CMakeFiles/car.dir/Core/Src/motor_test.c.obj	740b2efad46eb4a2
+3	192	8141334794863059	CMakeFiles/car.dir/Core/Src/main.c.obj	9b856161a8c6e563
+15	218	8141334795123270	CMakeFiles/car.dir/Core/Src/encoder_test.c.obj	9503cc1e1753d38f
+218	417	8141334796992417	car.elf	9bfe8e80e743be10
+12	203	8141335355901042	CMakeFiles/car.dir/Core/Src/main.c.obj	9b856161a8c6e563
+204	399	8141335357663898	car.elf	9bfe8e80e743be10

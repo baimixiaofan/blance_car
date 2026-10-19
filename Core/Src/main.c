@@ -103,7 +103,7 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 #if (APP_MODE == APP_MODE_ENCODER_TEST)
-  /* 编码器测试：电机保持关闭，启动编码器接口和串口输出 */
+  /* 编码器测试：初始化电机安全状态、编码器接口和串口输出 */
   EncoderTest_Init();
 #else
   /* 电机 PWM 测试：方向回停止、占空比清零并启动 PWM 通道 */

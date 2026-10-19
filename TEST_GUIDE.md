@@ -12,9 +12,9 @@
 - 当前默认 `MOTOR_TEST_USE_RIGHT_MOTOR=0`，**只驱动左电机**；右电机的引脚定义和代码都保留，恢复双电机测试时把该宏改成 `1` 即可。
 - 已修正原工程把 SWD 关闭的问题（`stm32f1xx_hal_msp.c` 和 `car.ioc`），现在 PA13/PA14 可以正常下载调试。
 - 已编译出烧录文件：
-  - `build/homework/car.hex`
-  - `build/homework/car.bin`
-  - `build/homework/car.elf`
+  - `build/homework/car_motor.hex`（作业二电机测试固件）
+  - `build/homework/car_motor.bin`
+  - `build/homework/car.elf`（默认编译输出，需把 `TEST_SELECT` 设为 2）
 
 ## 2. 上电前接线检查
 
@@ -110,10 +110,12 @@ cmake -S . -B build/homework -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-
 cmake --build build/homework
 ```
 
-生成 `build/homework/car.hex` 后烧录。使用 STM32CubeProgrammer 命令行时：
+作业二的波形测试需要先把 `Core/Inc/app_config.h` 中的 `TEST_SELECT` 设为 **2** 再编译，或直接烧录已生成的 `build/homework/car_motor.hex`。
+
+使用 STM32CubeProgrammer 命令行时：
 
 ```bash
-"D:/ST/STM32CubeCLT_1.19.0/STM32CubeProgrammer/bin/STM32_Programmer_CLI.exe" -c port=SWD -w "E:/control/car/build/homework/car.hex" -v -rst
+"D:/ST/STM32CubeCLT_1.19.0/STM32CubeProgrammer/bin/STM32_Programmer_CLI.exe" -c port=SWD -w "E:/control/car/build/homework/car_motor.hex" -v -rst
 ```
 
 如果 ST-Link 连不上（板上原有程序可能关闭过 SWD），用 **Connect Under Reset** 方式连接后再烧录。
