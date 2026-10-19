@@ -67,25 +67,22 @@ void MotorTest_Init(void)
 {
     /*
      * CubeMX 已经配置好 GPIO 和 TIM1，这里只做运行前的安全状态：
-     * 方向先回停止、两路占空比清零，再启动对应 PWM 通道。
+     * 方向先回停止、两路占空比清零，再启动 PWM 通道。
+     * 两个通道都启动，停用的一路保持 CCR=0，使引脚明确为低电平；
+     * 停用电机的方向线也一直是低，TB6612 不会输出。
      * HAL_TIM_PWM_Start 会打开 CCxE 和 TIM1 的 MOE。
      */
     MotorTest_SetDirection(MOTOR_DIR_STOP, MOTOR_DIR_STOP);
     MotorTest_SetDutyPercent(0U, 0U);
 
-#if (MOTOR_TEST_USE_LEFT_MOTOR != 0)
     if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4) != HAL_OK)
     {
         Error_Handler();
     }
-#endif
-
-#if (MOTOR_TEST_USE_RIGHT_MOTOR != 0)
     if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK)
     {
         Error_Handler();
     }
-#endif
 }
 
 void MotorTest_SetDirection(MotorDir left, MotorDir right)
