@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"C:/Users/baimixiaofan/Downloads/TB6612电机驱动附送资料/TB6612电机驱动附送资料/1.STM32F1例程\" && echo \"---\" && ls -la \"E:/control/car\" && echo \"---\" && ls -la \"C:/Users/baimixiaofan/Downloads/引脚配置.md\" \"C:/Users/baimixiaofan/Downloads/2.PWM驱动波形与驱动芯片输出测试作业.docx\")",
+      "Read(//c/Users/baimixiaofan/Downloads/TB6612电机驱动附送资料/TB6612电机驱动附送资料/**)"
+    ]
+  }
+}
