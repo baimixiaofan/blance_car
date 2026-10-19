@@ -4,16 +4,20 @@
 #include "stm32f1xx_hal.h"
 
 /*
- * 硬件连接（与《引脚配置.md》一致）：
- *   右电机：PA8  -> TIM1_CH1 -> PWMA
- *           PB14 -> AIN1, PB15 -> AIN2
- *   左电机：PA11 -> TIM1_CH4 -> PWMB
- *           PB12 -> BIN1, PB13 -> BIN2
- *   方向真值表（PWM 为高时）：
- *     IN1=1, IN2=0 -> 正转，OUT1 输出 PWM，OUT2 为低
- *     IN1=0, IN2=1 -> 反转，OUT2 输出 PWM，OUT1 为低
- *     IN1=0, IN2=0 -> 停止（输出关闭）
- *     IN1=1, IN2=1 -> 刹车（两端同时为低）
+ * 硬件连接与 CubeMX 配置（与《引脚配置.md》一致）：
+ *   右电机：PA8  -> TIM1_CH1 -> PWMA，标签 PWMA
+ *           PB14 -> AIN1，PB15 -> AIN2，标签 AIN1/AIN2
+ *   左电机：PA11 -> TIM1_CH4 -> PWMB，标签 PWMB
+ *           PB12 -> BIN1，PB13 -> BIN2，标签 BIN1/BIN2
+ *
+ * TIM1（CubeMX 中配置）：PSC=0，ARR=399，PWM Mode 1，CH1/CH4 使能，
+ * 8 MHz 时钟下 PWM 频率 = 20 kHz。要改频率请在 CubeMX 的 TIM1 参数里改。
+ *
+ * 方向真值表（PWM 为高时）：
+ *   IN1=1, IN2=0 -> 正转，OUT1 输出 PWM，OUT2 为低
+ *   IN1=0, IN2=1 -> 反转，OUT2 输出 PWM，OUT1 为低
+ *   IN1=0, IN2=0 -> 停止（输出关闭）
+ *   IN1=1, IN2=1 -> 刹车（两端同时为低）
  */
 typedef enum
 {
@@ -32,9 +36,6 @@ typedef enum
 #define MOTOR_TEST_MODE                0
 #endif
 
-/* PWM 频率。程序会按实际 PCLK2 计算 ARR，因此修改系统时钟后频率仍为 20 kHz */
-#define MOTOR_TEST_PWM_FREQUENCY_HZ    20000U
-
 /* 自动模式的时间参数 */
 #define MOTOR_TEST_STEP_MS             5000U   /* 每档占空比保持 5 s */
 #define MOTOR_TEST_STEP_GAP_MS         500U    /* 档间停止 0.5 s，便于示波器分档观察 */
@@ -47,7 +48,7 @@ typedef enum
 
 /* 单路测试开关：
  * 某一路不接电机或暂时不测时，把对应宏改成 0，程序会一直把它保持在停止状态；
- * 该路的方向线仍会输出低电平，PWM 占空比固定为 0。
+ * 该路的方向线会保持低电平，PWM 占空比固定为 0。
  * 当前默认只驱动左电机（右电机已停用），恢复双电机测试时把右电机改为 1。 */
 #ifndef MOTOR_TEST_USE_LEFT_MOTOR
 #define MOTOR_TEST_USE_LEFT_MOTOR      1
@@ -75,13 +76,14 @@ typedef enum
 
 /* ============================== 对外接口 ============================== */
 
-/* 配置 PA8/PA11 为 TIM1 PWM 输出、PB12~PB15 为方向输出，初始输出 0% */
+/* 停止两路电机并启动 TIM1 已使能的 PWM 通道，初始占空比为 0。
+ * 必须在 CubeMX 生成的 MX_GPIO_Init() 和 MX_TIM1_Init() 之后调用。 */
 void MotorTest_Init(void);
 
 /* 周期调用：自动模式负责换向/换档，固定模式只在上电后应用一次参数 */
 void MotorTest_Task(void);
 
-/* 立即设置左右方向（会直接改方向线，运行中调用时应先保证占空比为 0） */
+/* 立即设置左右方向（运行中调用时应先保证占空比为 0） */
 void MotorTest_SetDirection(MotorDir left, MotorDir right);
 
 /* 立即设置左右占空比，范围 0~100，超过 100 按 100 处理 */

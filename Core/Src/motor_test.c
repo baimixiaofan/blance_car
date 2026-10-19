@@ -1,44 +1,33 @@
 /*
  * TB6612 双电机测试模块
  *
- * 右电机（通道 A）：PA8/TIM1_CH1 -> PWMA，PB14/PB15 -> AIN1/AIN2
- * 左电机（通道 B）：PA11/TIM1_CH4 -> PWMB，PB12/PB13 -> BIN1/BIN2
+ * 引脚、GPIO 和 TIM1 的初始化全部由 CubeMX 生成的 MX_GPIO_Init()、
+ * MX_TIM1_Init() 完成；本文件只通过 HAL 启停 PWM、修改 CCR 和写方向线，
+ * 不再直接操作 GPIO/TIM 寄存器。
  *
- * TIM1 和 GPIO 在这里直接配置，不依赖 CubeMX 生成的初始化代码，
- * 因此重新生成工程不会破坏测试功能。
+ * CubeMX 配置：
+ *   右电机：PA8/TIM1_CH1 -> PWMA，PB14/PB15 -> AIN1/AIN2
+ *   左电机：PA11/TIM1_CH4 -> PWMB，PB12/PB13 -> BIN1/BIN2
+ *   TIM1：PSC=0，ARR=399，PWM Mode 1，8 MHz 下为 20 kHz
  *
  * 当前默认通过 MOTOR_TEST_USE_RIGHT_MOTOR=0 只驱动左电机；
- * 右电机的引脚定义仍然保留，恢复双电机时只需改宏，不要注释下面的引脚宏。
+ * 恢复双电机时只需改宏，不需要改 CubeMX 配置。
  */
 
+#include "main.h"
 #include "motor_test.h"
 
-/* 方向线引脚分配（与电机测试接线表一致） */
-#define LEFT_IN1_PIN    GPIO_PIN_12   /* PB12 */
-#define LEFT_IN2_PIN    GPIO_PIN_13   /* PB13 */
-#define RIGHT_IN1_PIN   GPIO_PIN_14   /* PB14 */
-#define RIGHT_IN2_PIN   GPIO_PIN_15   /* PB15 */
-
-/* PWM 一个周期的计数个数，即 ARR + 1，设置占空比时用它换算 CCR */
-static uint32_t s_pwm_period_counts;
+/* CubeMX 在 main.c 中定义的 TIM1 句柄 */
+extern TIM_HandleTypeDef htim1;
 
 /*
- * 计算 TIM1 的计数时钟。
- * STM32F1 中 APB2 预分频不为 1 时，定时器时钟 = PCLK2 * 2；为 1 时就是 PCLK2。
- * 这样即使以后把系统时钟改成 72 MHz，PWM 频率仍会按 20 kHz 重新计算。
+ * 按指定方向写一个电机的 IN1/IN2。
+ * dir=停止/刹车时两线同时动作，正转/反转时一高一低。
+ * 方向改变只在占空比为 0 时进行（由测试状态机保证），因此两次写引脚
+ * 之间的几个时钟周期不会造成带载换向。
  */
-static uint32_t motor_timer_clock_hz(void)
-{
-    uint32_t pclk2 = HAL_RCC_GetPCLK2Freq();
-    return ((RCC->CFGR & RCC_CFGR_PPRE2) == RCC_CFGR_PPRE2_DIV1) ? pclk2 : (pclk2 * 2U);
-}
-
-/*
- * 把“方向 + 是否反接”转换成 GPIO BSRR 的置位/复位掩码。
- * set 中为 1 的位输出高电平，reset 中为 1 的位输出低电平。
- */
-static void motor_dir_bits(MotorDir dir, uint16_t in1, uint16_t in2, uint8_t inverted,
-                           uint32_t *set, uint32_t *reset)
+static void set_motor_dir(MotorDir dir, GPIO_TypeDef *port, uint16_t in1_pin, uint16_t in2_pin,
+                          uint8_t inverted)
 {
     if (inverted != 0U)
     {
@@ -55,136 +44,75 @@ static void motor_dir_bits(MotorDir dir, uint16_t in1, uint16_t in2, uint8_t inv
     switch (dir)
     {
         case MOTOR_DIR_FORWARD:     /* IN1=1, IN2=0 */
-            *set = in1;
-            *reset = in2;
+            HAL_GPIO_WritePin(port, in1_pin, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(port, in2_pin, GPIO_PIN_RESET);
             break;
         case MOTOR_DIR_REVERSE:     /* IN1=0, IN2=1 */
-            *set = in2;
-            *reset = in1;
+            HAL_GPIO_WritePin(port, in1_pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(port, in2_pin, GPIO_PIN_SET);
             break;
         case MOTOR_DIR_BRAKE:       /* IN1=IN2=1，短接制动 */
-            *set = (uint32_t)in1 | in2;
-            *reset = 0U;
+            HAL_GPIO_WritePin(port, in1_pin, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(port, in2_pin, GPIO_PIN_SET);
             break;
         case MOTOR_DIR_STOP:        /* IN1=IN2=0，输出关闭 */
         default:
-            *set = 0U;
-            *reset = (uint32_t)in1 | in2;
+            HAL_GPIO_WritePin(port, in1_pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(port, in2_pin, GPIO_PIN_RESET);
             break;
     }
 }
 
 void MotorTest_Init(void)
 {
-    /* 1. 打开 GPIOA、GPIOB 和 TIM1 的时钟 */
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    __HAL_RCC_TIM1_CLK_ENABLE();
-
     /*
-     * 2. 方向线先输出低电平，再切换为推挽输出，保证上电瞬间两个电机都不转。
-     *    即使右电机被停用，也把 PB14/PB15 拉低并配置成输出，避免引脚浮空。
-     *    BSRR 的高 16 位写 1 会复位对应引脚；这里用一次写操作，避免读改写毛刺。
+     * CubeMX 已经配置好 GPIO 和 TIM1，这里只做运行前的安全状态：
+     * 方向先回停止、两路占空比清零，再启动对应 PWM 通道。
+     * HAL_TIM_PWM_Start 会打开 CCxE 和 TIM1 的 MOE。
      */
-    GPIOB->BSRR = ((uint32_t)(LEFT_IN1_PIN | LEFT_IN2_PIN | RIGHT_IN1_PIN | RIGHT_IN2_PIN)) << 16U;
+    MotorTest_SetDirection(MOTOR_DIR_STOP, MOTOR_DIR_STOP);
+    MotorTest_SetDutyPercent(0U, 0U);
 
-    /*
-     * GPIOx_CRH 每 4 位配置一个引脚（引脚号 8~15）：
-     *   0x3 = 通用推挽输出、50 MHz。
-     * PB12~PB15 对应 CRH 的 bit16~bit31，所以整体写入 0x3333 << 16。
-     * 先读出来清掉这 16 位，再写配置，避免影响 PB8~PB11。
-     */
-    GPIOB->CRH = (GPIOB->CRH & ~(0xFFFFUL << 16U)) | (0x3333UL << 16U);
+#if (MOTOR_TEST_USE_LEFT_MOTOR != 0)
+    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4) != HAL_OK)
+    {
+        Error_Handler();
+    }
+#endif
 
-    /*
-     * 3. PA8 -> TIM1_CH1（右电机），PA11 -> TIM1_CH4（左电机）。
-     *    PA8 对应 CRH 的 bit0~bit3，PA11 对应 bit12~bit15。
-     *    0xB = 复用推挽输出、50 MHz；只改这两位，保留 PA9/PA10/PA12~PA15 的配置。
-     *    右电机停用时 CCR1 始终保持 0，所以 PA8 只会输出低电平。
-     */
-    GPIOA->CRH = (GPIOA->CRH & ~((0xFUL << 0U) | (0xFUL << 12U)))
-               | (0xBUL << 0U) | (0xBUL << 12U);
-
-    /*
-     * 4. 计算 ARR，得到 20 kHz：
-     *      一个周期的计数个数 = 计数时钟 / PWM 频率
-     *      ARR = 计数个数 - 1
-     *    加半个频率再除，是为了四舍五入。
-     *    8 MHz 时 ARR=399（400 个计数），64 MHz 时 ARR=3199（3200 个计数）。
-     */
-    uint32_t tim_clk = motor_timer_clock_hz();
-    uint32_t arr = (tim_clk + MOTOR_TEST_PWM_FREQUENCY_HZ / 2U) / MOTOR_TEST_PWM_FREQUENCY_HZ - 1U;
-    s_pwm_period_counts = arr + 1U;
-
-    /*
-     * 5. 初始化 TIM1：
-     *    - PSC=0，定时器不分频
-     *    - PWM 模式 1：CNT < CCR 时输出高电平
-     *    - 打开 CCR 预装载（OCxPE）：运行中修改占空比会在下一个更新事件生效，
-     *      不会切断当前正在输出的脉冲
-     *    - CCER 打开 CH1 和 CH4 输出
-     *    - BDTR 的 MOE 是高级定时器 TIM1 的主输出使能，必须置 1
-     *    - EGR 的 UG 产生一次更新，把 PSC/ARR/CCR 装入影子寄存器
-     */
-    TIM1->CR1 = 0U;             /* 先停止计数器，边沿对齐、向上计数 */
-    TIM1->PSC = 0U;             /* 计数器时钟 = TIM1 时钟 */
-    TIM1->ARR = arr;            /* PWM 周期 */
-    TIM1->CCR1 = 0U;            /* 右电机初始占空比 0% */
-    TIM1->CCR4 = 0U;            /* 左电机初始占空比 0% */
-
-    TIM1->CCMR1 = TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1PE;
-    TIM1->CCMR2 = TIM_CCMR2_OC4M_2 | TIM_CCMR2_OC4M_1 | TIM_CCMR2_OC4PE;
-    TIM1->CCER = TIM_CCER_CC1E | TIM_CCER_CC4E;   /* 高电平有效，使能 CH1/CH4 */
-    TIM1->BDTR = TIM_BDTR_MOE;                    /* 主输出使能 */
-
-    TIM1->EGR = TIM_EGR_UG;     /* 手动产生更新事件，立即装载上面的配置 */
-    TIM1->SR = 0U;              /* 清除 UG 产生的更新标志 */
-
-    /* 6. 启动计数器；此时两路 CCR 均为 0，电机不会动 */
-    TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
+#if (MOTOR_TEST_USE_RIGHT_MOTOR != 0)
+    if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+#endif
 }
 
 void MotorTest_SetDirection(MotorDir left, MotorDir right)
 {
-    uint32_t set = 0U;
-    uint32_t reset = 0U;
-    uint32_t left_set = 0U;
-    uint32_t left_reset = 0U;
-    uint32_t right_set = 0U;
-    uint32_t right_reset = 0U;
-
 #if (MOTOR_TEST_USE_LEFT_MOTOR != 0)
-    /* 左电机使能：按请求的方向计算 BIN1/BIN2 */
-    motor_dir_bits(left, LEFT_IN1_PIN, LEFT_IN2_PIN, MOTOR_TEST_LEFT_DIR_INVERTED,
-                   &left_set, &left_reset);
+    /* 左电机使用 CubeMX 生成的 BIN1/BIN2 引脚标签 */
+    set_motor_dir(left, BIN1_GPIO_Port, BIN1_Pin, BIN2_Pin, MOTOR_TEST_LEFT_DIR_INVERTED);
 #else
-    /* 左电机停用：方向线固定拉低，输出关闭 */
+    /* 左电机停用：方向线固定拉低 */
     (void)left;
-    left_reset = (uint32_t)LEFT_IN1_PIN | LEFT_IN2_PIN;
+    HAL_GPIO_WritePin(BIN1_GPIO_Port, BIN1_Pin | BIN2_Pin, GPIO_PIN_RESET);
 #endif
 
 #if (MOTOR_TEST_USE_RIGHT_MOTOR != 0)
-    /* 右电机使能：按请求的方向计算 AIN1/AIN2 */
-    motor_dir_bits(right, RIGHT_IN1_PIN, RIGHT_IN2_PIN, MOTOR_TEST_RIGHT_DIR_INVERTED,
-                   &right_set, &right_reset);
+    /* 右电机使用 CubeMX 生成的 AIN1/AIN2 引脚标签 */
+    set_motor_dir(right, AIN1_GPIO_Port, AIN1_Pin, AIN2_Pin, MOTOR_TEST_RIGHT_DIR_INVERTED);
 #else
-    /* 右电机停用：方向线固定拉低，输出关闭 */
+    /* 右电机停用：方向线固定拉低 */
     (void)right;
-    right_reset = (uint32_t)RIGHT_IN1_PIN | RIGHT_IN2_PIN;
+    HAL_GPIO_WritePin(AIN1_GPIO_Port, AIN1_Pin | AIN2_Pin, GPIO_PIN_RESET);
 #endif
-
-    set = left_set | right_set;
-    reset = left_reset | right_reset;
-
-    /*
-     * BSRR 低 16 位置位、高 16 位复位；一次写入让左右方向线同时生效，
-     * 不会出现左电机已换向、右电机还没换向的中间状态。
-     */
-    GPIOB->BSRR = set | (reset << 16U);
 }
 
 void MotorTest_SetDutyPercent(uint8_t left_percent, uint8_t right_percent)
 {
+    uint32_t period_counts = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1U;
+
     if (left_percent > 100U)
     {
         left_percent = 100U;
@@ -197,18 +125,19 @@ void MotorTest_SetDutyPercent(uint8_t left_percent, uint8_t right_percent)
     /*
      * 左电机接 PA11/TIM1_CH4，右电机接 PA8/TIM1_CH1，注意不要写反。
      * CCR = 周期计数 * 百分比 / 100；CCR 等于周期计数时输出恒高，即 100%。
+     * HAL_TIM_PWM_ConfigChannel 已使能 CCR 预装载，新值会在下一个更新事件生效。
      * 被停用的电机强制写 0，防止它误转。
      */
 #if (MOTOR_TEST_USE_LEFT_MOTOR != 0)
-    TIM1->CCR4 = (s_pwm_period_counts * left_percent) / 100U;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, (period_counts * left_percent) / 100U);
 #else
-    TIM1->CCR4 = 0U;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 0U);
 #endif
 
 #if (MOTOR_TEST_USE_RIGHT_MOTOR != 0)
-    TIM1->CCR1 = (s_pwm_period_counts * right_percent) / 100U;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (period_counts * right_percent) / 100U);
 #else
-    TIM1->CCR1 = 0U;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0U);
 #endif
 }
 

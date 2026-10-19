@@ -4,9 +4,9 @@
 
 ## 1. 已经完成的程序
 
-- 新增 `Core/Inc/motor_test.h`、`Core/Src/motor_test.c`，直接配置 TIM1 和 GPIO，不依赖 CubeMX 生成的定时器代码。
-- `PA8 / TIM1_CH1` → 右电机 PWMA，`PA11 / TIM1_CH4` → 左电机 PWMB。
-- `PB14/PB15` → 右电机 AIN1/AIN2，`PB12/PB13` → 左电机 BIN1/BIN2。
+- 引脚和 TIM1 已写进 `car.ioc`，由 CubeMX 生成 `MX_GPIO_Init()` 和 `MX_TIM1_Init()`；`motor_test.c` 只使用 HAL 的 `htim1`、`HAL_TIM_PWM_Start`、`__HAL_TIM_SET_COMPARE` 和 `HAL_GPIO_WritePin`。
+- `PA8 / TIM1_CH1` → 右电机 PWMA（标签 `PWMA`），`PA11 / TIM1_CH4` → 左电机 PWMB（标签 `PWMB`）。
+- `PB14/PB15` → 右电机 AIN1/AIN2（标签 `AIN1/AIN2`），`PB12/PB13` → 左电机 BIN1/BIN2（标签 `BIN1/BIN2`）。
 - PWM 频率 20 kHz，上电先输出 0 占空比、方向线全低，1 s 后才开始动作。
 - 自动测试：正转 30% → 60% → 90%，再反转 30% → 60% → 90%，每档 5 s，档间停止 0.5 s，循环运行。
 - 当前默认 `MOTOR_TEST_USE_RIGHT_MOTOR=0`，**只驱动左电机**；右电机的引脚定义和代码都保留，恢复双电机测试时把该宏改成 `1` 即可。
@@ -47,14 +47,28 @@
 | 反转 | 0 | 1 | AO2（BO2）输出 PWM，AO1（BO1）为低 |
 | 停止 | 0 | 0 | 两输出关闭 |
 
-## 3. 测试参数：改 `motor_test.h` 即可
+## 3. CubeMX 配置与测试参数
+
+### 3.1 CubeMX 中的配置
+
+| 项目 | 配置 |
+|---|---|
+| PA8 | `TIM1_CH1`，标签 `PWMA`，AF Push-Pull，High speed |
+| PA11 | `TIM1_CH4`，标签 `PWMB`，AF Push-Pull，High speed |
+| PB12 / PB13 | `GPIO_Output`，标签 `BIN1` / `BIN2`，推挽输出，初始低 |
+| PB14 / PB15 | `GPIO_Output`，标签 `AIN1` / `AIN2`，推挽输出，初始低 |
+| TIM1 | PSC=0，ARR=399，PWM Mode 1，CH1/CH4 使能 |
+| PA13 / PA14 | Serial Wire（SWD） |
+
+8 MHz 时钟下，`8 MHz / (399 + 1) = 20 kHz`。要改 PWM 频率，在 CubeMX 的 TIM1 参数里改 ARR/PSC，重新生成代码即可；占空比换算会自动读取 ARR。
+
+### 3.2 测试参数（改 `motor_test.h` 即可）
 
 | 宏 | 默认值 | 作用 |
 |---|---:|---|
 | `MOTOR_TEST_MODE` | 0 | 0=自动循环；1=固定状态 |
 | `MOTOR_TEST_USE_LEFT_MOTOR` | 1 | 左电机使能；0=该路保持停止 |
 | `MOTOR_TEST_USE_RIGHT_MOTOR` | 0 | 右电机使能；当前为 0，只测左电机 |
-| `MOTOR_TEST_PWM_FREQUENCY_HZ` | 20000 | PWM 频率 |
 | `MOTOR_TEST_STEP_MS` | 5000 | 每档保持时间 |
 | `MOTOR_TEST_STEP_GAP_MS` | 500 | 档间停止时间 |
 | `MOTOR_TEST_START_DELAY_MS` | 1000 | 上电后延时 |
@@ -204,8 +218,8 @@ cmake --build build/homework
 | 只有一个电机转 | 对应通道的 PWM/方向线是否接对；PA11 是否被别的功能占用 |
 | 电机转向和标注相反 | 把 `MOTOR_TEST_LEFT_DIR_INVERTED` 或 `MOTOR_TEST_RIGHT_DIR_INVERTED` 改为 1 |
 | 输出幅度明显低于 VM | VM 电源限流/电池电量低/线损；带载时 MOSFET 压降属正常 |
-| 输出频率不是 20 kHz | 先测 PA8/PA11；程序会按 PCLK2 自动计算 ARR，若改过时钟仍然应是 20 kHz |
+| 输出频率不是 20 kHz | 先测 PA8/PA11；检查 CubeMX TIM1 的 PSC/ARR（8 MHz 下 PSC=0、ARR=399）；改过系统时钟后要重新计算 ARR |
 | 波形边沿振铃严重 | 示波器地线太长，用短地弹簧；输出端可并小电容/ RC 吸收，但不要影响驱动 |
 | 下载器连不上 | 用 Connect Under Reset；本工程已把 SWD 重新打开 |
 
-如果后面要在 CubeMX 里正式配置 TIM1 和这些 GPIO，需要删掉 `motor_test.c` 里的直接寄存器初始化，避免和 CubeMX 生成的初始化重复。
+现在 TIM1 和这些 GPIO 已经由 CubeMX 管理。以后要改引脚或 PWM 参数，请直接改 `car.ioc` 并重新生成代码；`motor_test.c` 通过 CubeMX 生成的引脚标签和 `htim1` 自动适配，不要再在模块里直接配置寄存器。
