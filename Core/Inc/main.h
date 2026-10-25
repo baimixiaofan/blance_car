@@ -59,24 +59,28 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define ENC_RA_Pin GPIO_PIN_0
-#define ENC_RA_GPIO_Port GPIOA
-#define ENC_RB_Pin GPIO_PIN_1
+#define ENC_RB_Pin GPIO_PIN_0
 #define ENC_RB_GPIO_Port GPIOA
+#define ENC_RA_Pin GPIO_PIN_1
+#define ENC_RA_GPIO_Port GPIOA
 #define BT_TX_Pin GPIO_PIN_10
 #define BT_TX_GPIO_Port GPIOB
 #define BT_RX_Pin GPIO_PIN_11
 #define BT_RX_GPIO_Port GPIOB
-#define BIN1_Pin GPIO_PIN_12
-#define BIN1_GPIO_Port GPIOB
-#define BIN2_Pin GPIO_PIN_13
-#define BIN2_GPIO_Port GPIOB
-#define AIN1_Pin GPIO_PIN_14
+#define AIN1_Pin GPIO_PIN_12
 #define AIN1_GPIO_Port GPIOB
-#define AIN2_Pin GPIO_PIN_15
+#define AIN2_Pin GPIO_PIN_13
 #define AIN2_GPIO_Port GPIOB
+#define BIN1_Pin GPIO_PIN_14
+#define BIN1_GPIO_Port GPIOB
+#define BIN2_Pin GPIO_PIN_15
+#define BIN2_GPIO_Port GPIOB
 #define PWMA_Pin GPIO_PIN_8
 #define PWMA_GPIO_Port GPIOA
+#define UART1_TX_Pin GPIO_PIN_9
+#define UART1_TX_GPIO_Port GPIOA
+#define UART1_RX_Pin GPIO_PIN_10
+#define UART1_RX_GPIO_Port GPIOA
 #define PWMB_Pin GPIO_PIN_11
 #define PWMB_GPIO_Port GPIOA
 #define ENC_LA_Pin GPIO_PIN_6
