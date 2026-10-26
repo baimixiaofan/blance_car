@@ -1,0 +1,25 @@
+# CMake / Ninja 构建输出
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+build.ninja
+.ninja_deps
+.ninja_log
+
+# 编译/链接产物
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+*.axf
+*.lst
+
+# IDE / 编辑器本地文件
+.idea/
+.vscode/
+*.swp
+*~
