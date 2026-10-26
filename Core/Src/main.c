@@ -21,9 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "app_config.h"
-#include "motor_test.h"
-#include "encoder_test.h"
+#include "motor.h"
+#include "encoder_usart.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -67,7 +66,16 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+static void wait_left_finished(Motor *left_motor, Motor *right_motor)
+{
+  while (Motor_IsBusy(left_motor) != 0U)
+  {
+    Motor_Update(left_motor);
+    Motor_Update(right_motor);
+    EncoderUsart_Task();
+    HAL_Delay(1U);
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -105,13 +113,24 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-#if (APP_MODE == APP_MODE_ENCODER_TEST)
-  /* 编码器测试：初始化电机安全状态、编码器接口和串口输出 */
-  EncoderTest_Init();
-#else
-  /* 电机 PWM 测试：方向回停止、占空比清零并启动 PWM 通道 */
-  MotorTest_Init();
-#endif
+  Motor *left_motor = Motor_Init(MOTOR_LEFT);
+  Motor *right_motor = Motor_Init(MOTOR_RIGHT);
+
+  /* 左轮正转 4 圈，转动期间持续回传编码器数据 */
+  EncoderUsart_Init(left_motor);
+  EncoderUsart_Init(right_motor);
+
+  Motor_Move(left_motor, 50U, MOTOR_DIR_FORWARD, 4.0f);
+  wait_left_finished(left_motor, right_motor);
+
+  HAL_Delay(500U);
+
+  /* 左轮反转 4 圈 */
+  Motor_Move(left_motor, 50U, MOTOR_DIR_REVERSE, 4.0f);
+  wait_left_finished(left_motor, right_motor);
+
+  Motor_Stop(left_motor);
+  Motor_Stop(right_motor);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -121,14 +140,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-#if (APP_MODE == APP_MODE_ENCODER_TEST)
-    /* 编码器采样：计圈或空载测速 */
-    EncoderTest_Task();
-#else
-    /* 电机 PWM 测试状态机：上电延时、换档和换向 */
-    MotorTest_Task();
-#endif
-    HAL_Delay(5);
+    Motor_Update(left_motor);
+    Motor_Update(right_motor);
+    EncoderUsart_Task();
+    HAL_Delay(1U);
   }
   /* USER CODE END 3 */
 }

@@ -103,6 +103,9 @@ MotorStatus Motor_Update(Motor *motor);
 uint8_t Motor_IsBusy(const Motor *motor);
 MotorStatus Motor_GetStatus(const Motor *motor);
 
+/* 返回电机编号；motor == NULL 时返回 MOTOR_ID_COUNT。 */
+MotorId Motor_GetId(const Motor *motor);
+
 /* 累计计数（带符号，正转增加），由 Motor_Update() 更新。 */
 int32_t Motor_GetCount(const Motor *motor);
 uint16_t Motor_GetRawCounter(const Motor *motor);

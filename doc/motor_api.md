@@ -167,6 +167,7 @@ typedef struct Motor Motor;
 | `Motor_Update(motor)` | 读编码器并推进转动状态 | 否 |
 | `Motor_IsBusy(motor)` | 查询是否正在转 | 否 |
 | `Motor_GetStatus(motor)` | 查询最近一次转动状态 | 否 |
+| `Motor_GetId(motor)` | 查询电机编号（左/右） | 否 |
 | `Motor_GetCount(motor)` | 读软件累计计数 | 否 |
 | `Motor_GetRawCounter(motor)` | 读硬件计数器原始值 | 否 |
 | `Motor_GetTurns(motor)` | 读累计圈数 | 否 |
@@ -201,7 +202,7 @@ Motor *Motor_Init(MotorId id);
 
 - 必须在 CubeMX 生成的 `MX_GPIO_Init()`、`MX_TIM1_Init()`、`MX_TIM2_Init()`、`MX_TIM4_Init()` 之后调用。
 - 同一个 `id` 重复调用会直接返回同一个指针，**不会重复初始化，也不会清零计数**。
-- 本工程中由 `MotorTest_Init()` 或 `EncoderTest_Init()` 间接调用。
+- 本工程中 `main.c` 在 CubeMX 外设初始化完成后直接调用 `Motor_Init(MOTOR_LEFT)` 和 `Motor_Init(MOTOR_RIGHT)`。
 
 ---
 
@@ -541,6 +542,28 @@ void Motor_ResetCount(Motor *motor);
 
 ---
 
+### 6.17 `Motor_GetId`
+
+```c
+MotorId Motor_GetId(const Motor *motor);
+```
+
+查询电机编号。
+
+| 参数 | 说明 |
+|---|---|
+| `motor` | 电机指针 |
+
+| 返回值 | 说明 |
+|---|---|
+| `MOTOR_LEFT` | 左电机 |
+| `MOTOR_RIGHT` | 右电机 |
+| `MOTOR_ID_COUNT` | `motor == NULL` |
+
+用于需要根据电机对象判断左右通道的模块，例如 `EncoderUsart_Init()`。
+
+---
+
 ## 7. 转动状态机
 
 ### 7.1 非阻塞流程
@@ -683,8 +706,6 @@ MX_TIM1_Init()       // PWM
 MX_TIM2_Init()       // 右编码器
 MX_TIM4_Init()       // 左编码器
     ↓
-MotorTest_Init() 或 EncoderTest_Init()
-    ↓
 Motor_Init(MOTOR_LEFT)
 Motor_Init(MOTOR_RIGHT)
 ```
@@ -710,17 +731,64 @@ Motor_Init(MOTOR_RIGHT)
 
 ---
 
-## 11. 与当前测试模式的对应关系
+## 11. 当前工程中的使用方式
 
-| `TEST_SELECT` | 模式 | 电机模块使用方式 |
-|---:|---|---|
-| 0 | 手动计圈 | `Motor_Init()` 后保持停止，手转车轮；`Motor_Update()` 持续累计 |
-| 1 | 空载测试 | `Motor_SetDirSpeed()` 让选中电机持续 100% 正转 |
-| 2 | 作业二 PWM 测试 | `Motor_SetDirSpeed()` 按 30/60/90% 正反转 |
-| 3 | 调试模式 | `Motor_SetDirSpeed()` 持续 50% 正转，打印原始 A/B 和计数 |
-| 4 | 四圈往返 | `Motor_MoveTurns()` 正转 4 圈 → 停 0.5 s → 反转 4 圈 |
+旧的 `motor_test.c/h`、`encoder_test.c/h`、`app_config.h` 已删除，工程现在只保留 `motor.c/h` 和 `encoder_usart.c/h`。`main.c` 当前逻辑：
 
-四圈流程位于 `Core/Src/encoder_test.c` 的 `four_turn_start()` 和 `encoder_four_turn_update()`。
+```c
+Motor *left_motor  = Motor_Init(MOTOR_LEFT);
+Motor *right_motor = Motor_Init(MOTOR_RIGHT);
+
+EncoderUsart_Init(left_motor);
+EncoderUsart_Init(right_motor);
+
+while (1)
+{
+    Motor_Update(left_motor);
+    Motor_Update(right_motor);
+    EncoderUsart_Task();
+    HAL_Delay(1);
+}
+```
+
+当前 `main.c` 执行左轮正转 4 圈 → 停 0.5 s → 反转 4 圈。每段用非阻塞的 `Motor_Move()` 启动，等待循环里持续调用 `Motor_Update()` 和 `EncoderUsart_Task()`，所以转动过程中串口会实时输出。转动结束后进入上面的主循环，电机保持停止。
+
+其他运动示例：
+
+```c
+/* 单电机阻塞转 4 圈；阻塞期间不会更新串口 */
+Motor_Rotate(left_motor, 50, MOTOR_DIR_FORWARD, 4.0f);
+
+/* 左右轮同时转，非阻塞 */
+Motor_Move(left_motor, 50, MOTOR_DIR_FORWARD, 4.0f);
+Motor_Move(right_motor, 50, MOTOR_DIR_FORWARD, 4.0f);
+```
+
+### 11.1 编码器串口输出
+
+`Core/Src/encoder_usart.c` 每 100 ms 读取一次 `Motor_GetCount()`，输出到：
+
+- USART1：PA9 = TX，PA10 = RX，115200 8N1（主串口）
+- USART3：PB10 = TX，PB11 = RX，115200 8N1（镜像）
+
+输出格式：
+
+```text
+T=...ms | L d=+... tot=+... rev=+x.xx ang=+xxxx.xx rpm=+xx.x | R ...
+```
+
+| 字段 | 含义 |
+|---|---|
+| `T` | 上电后的毫秒数 |
+| `d` | 本次 100 ms 采样内的计数增量 |
+| `tot` | 累计计数 |
+| `rev` | 累计圈数，两位小数 |
+| `ang` | 累计角度，单位 0.01° |
+| `rpm` | 瞬时转速，单位 RPM，一位小数 |
+
+默认只在左右轮计数发生变化时发送；需要每 100 ms 无条件输出，把 `encoder_usart.h` 里的 `ENCODER_USART_ALWAYS_PRINT` 改为 `1`。
+
+> `EncoderUsart_Task()` 只读取软件累计值，因此主循环必须先调用 `Motor_Update()`。
 
 ---
 
@@ -732,7 +800,7 @@ Motor_Init(MOTOR_RIGHT)
 | 电机完全不转 | STBY 不为高、VM 没电、方向/速度没设置 | 检查 TB6612 供电和 `Motor_SetDirSpeed()` |
 | `MoveTurns` 返回 `MOTOR_ERR_BUSY` | 上一次转动还没结束 | 等待 `Motor_IsBusy()` 变 0，或先 `Motor_Stop()` |
 | 圈数永远转不到，最后超时 | 编码器方向反了、编码器没计数、轮子被卡、速度太低 | 检查 `MOTOR_*_ENC_INVERTED`、编码器接线、超时时间 |
-| 计数一直是 0 | 编码器 3.3 V 供电、GND、A/B 接线、TIM 未启动 | 用调试模式看原始 A/B 和计数 |
+| 计数一直是 0 | 编码器 3.3 V 供电、GND、A/B 接线、TIM 未启动 | 用 `Motor_GetRawCounter()` 或示波器检查 A/B 和计数 |
 | 手转正转计数为负 | 编码器 A/B 接反或计数方向相反 | 把对应 `MOTOR_*_ENC_INVERTED` 改为 1 |
 | 实际转过的圈数偏大 | 到达目标后滑行过冲 | 降低占空比，或接受机械惯性误差 |
 | 转向和标注相反 | 电机线序或方向线定义相反 | 把对应 `MOTOR_*_DIR_INVERTED` 改为 1 |
@@ -746,7 +814,8 @@ Motor_Init(MOTOR_RIGHT)
 | 内容 | 文件 |
 |---|---|
 | 电机对象、编码器累计、转圈 API | `Core/Inc/motor.h`、`Core/Src/motor.c` |
+| 编码器串口输出 | `Core/Inc/encoder_usart.h`、`Core/Src/encoder_usart.c` |
+| 应用入口和主循环 | `Core/Src/main.c` |
 | CubeMX 引脚和外设配置 | `car.ioc` |
-| 作业二 PWM 测试流程 | `Core/Src/motor_test.c` |
-| 作业三编码器测试流程 | `Core/Src/encoder_test.c` |
-| 应用模式选择 | `Core/Inc/app_config.h` |
+| 本接口文档 | `doc/motor_api.md` |
+| 编码器串口接口文档 | `doc/encoder_usart_api.md` |

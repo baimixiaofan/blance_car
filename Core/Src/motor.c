@@ -38,7 +38,7 @@ static Motor s_motors[MOTOR_ID_COUNT] =
     {
         .id = MOTOR_LEFT,
         .pwm_tim = &htim1,
-        .pwm_channel = TIM_CHANNEL_4,
+        .pwm_channel = TIM_CHANNEL_1,
         .dir_port = BIN1_GPIO_Port,
         .in1_pin = BIN1_Pin,
         .in2_pin = BIN2_Pin,
@@ -50,7 +50,7 @@ static Motor s_motors[MOTOR_ID_COUNT] =
     {
         .id = MOTOR_RIGHT,
         .pwm_tim = &htim1,
-        .pwm_channel = TIM_CHANNEL_1,
+        .pwm_channel = TIM_CHANNEL_4,
         .dir_port = AIN1_GPIO_Port,
         .in1_pin = AIN1_Pin,
         .in2_pin = AIN2_Pin,
@@ -345,6 +345,15 @@ MotorStatus Motor_GetStatus(const Motor *motor)
         return MOTOR_ERR_PARAM;
     }
     return motor->move_status;
+}
+
+MotorId Motor_GetId(const Motor *motor)
+{
+    if (motor == NULL)
+    {
+        return MOTOR_ID_COUNT;
+    }
+    return motor->id;
 }
 
 int32_t Motor_GetCount(const Motor *motor)

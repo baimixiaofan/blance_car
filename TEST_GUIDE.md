@@ -2,6 +2,8 @@
 
 适用硬件：STM32F103C8T6 + TB6612FNG，对应本工程 `car.ioc` 和《引脚配置.md》。
 
+> **注意**：本文对应的旧测试代码（`motor_test.c/h`、`encoder_test.c/h`、`app_config.h`）已删除，当前工程只保留 `motor.c/h`。以下内容仅作为历史作业记录，实际接口以 `doc/motor_api.md` 为准。
+
 ## 1. 已经完成的程序
 
 - 引脚和 TIM1 已写进 `car.ioc`，由 CubeMX 生成 `MX_GPIO_Init()` 和 `MX_TIM1_Init()`；`motor.c` 只使用 HAL 的 `HAL_TIM_PWM_Start`、`__HAL_TIM_SET_COMPARE` 和 `HAL_GPIO_WritePin`。
