@@ -49,54 +49,37 @@ static void encoder_usart_print_sample(uint32_t now, uint32_t elapsed,
                                        int32_t left_delta, int32_t right_delta)
 {
     int32_t rev_left_x100;
-    int32_t rev_right_x100;
     int32_t angle_left_x100;
-    int32_t angle_right_x100;
     int32_t rpm_left_x10;
-    int32_t rpm_right_x10;
     char rev_l_sign;
-    char rev_r_sign;
     char angle_l_sign;
-    char angle_r_sign;
     char rpm_l_sign;
-    char rpm_r_sign;
+
+    (void)right_count;
+    (void)right_delta;
 
     rev_left_x100 = (int32_t)(((int64_t)left_count * 100) / MOTOR_COUNTS_PER_REV);
-    rev_right_x100 = (int32_t)(((int64_t)right_count * 100) / MOTOR_COUNTS_PER_REV);
 
     angle_left_x100 = (int32_t)(((int64_t)abs32(left_count) * 36000) /
                                 MOTOR_COUNTS_PER_REV);
-    angle_right_x100 = (int32_t)(((int64_t)abs32(right_count) * 36000) /
-                                 MOTOR_COUNTS_PER_REV);
 
     rpm_left_x10 = (int32_t)(((int64_t)left_delta * 600000) /
                              ((int64_t)MOTOR_COUNTS_PER_REV * (int64_t)elapsed));
-    rpm_right_x10 = (int32_t)(((int64_t)right_delta * 600000) /
-                              ((int64_t)MOTOR_COUNTS_PER_REV * (int64_t)elapsed));
 
     rev_l_sign = (rev_left_x100 < 0) ? '-' : '+';
-    rev_r_sign = (rev_right_x100 < 0) ? '-' : '+';
     angle_l_sign = (left_count < 0) ? '-' : '+';
-    angle_r_sign = (right_count < 0) ? '-' : '+';
     rpm_l_sign = (rpm_left_x10 < 0) ? '-' : '+';
-    rpm_r_sign = (rpm_right_x10 < 0) ? '-' : '+';
 
     rev_left_x100 = abs32(rev_left_x100);
-    rev_right_x100 = abs32(rev_right_x100);
     rpm_left_x10 = abs32(rpm_left_x10);
-    rpm_right_x10 = abs32(rpm_right_x10);
 
-    encoder_usart_print("T=%lums | L d=%+ld tot=%+ld rev=%c%ld.%02ld ang=%c%ld.%02ld rpm=%c%ld.%ld"
-                        " | R d=%+ld tot=%+ld rev=%c%ld.%02ld ang=%c%ld.%02ld rpm=%c%ld.%ld\r\n",
+    /* 临时：只输出左电机数据 */
+    encoder_usart_print("T=%lums | L d=%+ld tot=%+ld rev=%c%ld.%02ld ang=%c%ld.%02ld rpm=%c%ld.%ld\r\n",
                         (unsigned long)now,
                         (long)left_delta, (long)left_count,
                         rev_l_sign, (long)(rev_left_x100 / 100), (long)(rev_left_x100 % 100),
                         angle_l_sign, (long)(angle_left_x100 / 100), (long)(angle_left_x100 % 100),
-                        rpm_l_sign, (long)(rpm_left_x10 / 10), (long)(rpm_left_x10 % 10),
-                        (long)right_delta, (long)right_count,
-                        rev_r_sign, (long)(rev_right_x100 / 100), (long)(rev_right_x100 % 100),
-                        angle_r_sign, (long)(angle_right_x100 / 100), (long)(angle_right_x100 % 100),
-                        rpm_r_sign, (long)(rpm_right_x10 / 10), (long)(rpm_right_x10 % 10));
+                        rpm_l_sign, (long)(rpm_left_x10 / 10), (long)(rpm_left_x10 % 10));
 }
 
 void EncoderUsart_Init(Motor *motor)
@@ -134,7 +117,7 @@ void EncoderUsart_Init(Motor *motor)
         s_right = motor;
         s_last_right_count = Motor_GetCount(motor);
         s_last_printed_right = s_last_right_count;
-        encoder_usart_print("RIGHT ready: TIM2 (PA0/PA1), %ld counts/rev\r\n",
+        encoder_usart_print("RIGHT ready: TIM2 (PA15/PB3), %ld counts/rev\r\n",
                             (long)MOTOR_COUNTS_PER_REV);
     }
 
@@ -173,8 +156,8 @@ void EncoderUsart_Task(void)
     s_last_right_count = right_count;
 
 #if (ENCODER_USART_ALWAYS_PRINT == 0)
-    if ((left_count == s_last_printed_left) &&
-        (right_count == s_last_printed_right))
+    /* 临时：只依据左电机计数决定是否输出 */
+    if (left_count == s_last_printed_left)
     {
         return;
     }

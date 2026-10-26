@@ -17,13 +17,13 @@
 | 物理通道 | 左/右 | PWM | 方向线 | 编码器 |
 |---|---|---|---|---|
 | **A 通道** | **左轮** | **PA8 / TIM1_CH1** | **PB14 / PB15** | **PB6 / PB7 / TIM4** |
-| **B 通道** | **右轮** | **PA11 / TIM1_CH4** | **PB12 / PB13** | **PA0 / PA1 / TIM2** |
+| **B 通道** | **右轮** | **PA11 / TIM1_CH4** | **PB12 / PB13** | **PA15 / PB3 / TIM2（重映射）** |
 
 当前 `motor.c` 中的对象：
 
 ```c
 MOTOR_LEFT  = A 通道 = PA8  + PB14/PB15 + TIM4
-MOTOR_RIGHT = B 通道 = PA11 + PB12/PB13 + TIM2
+MOTOR_RIGHT = B 通道 = PA11 + PB12/PB13 + TIM2 (PA15/PB3)
 ```
 
 之前的错误是：`MOTOR_LEFT` 用了 PA11 的 PWM，`MOTOR_RIGHT` 用了 PA8 的 PWM，导致**单电机转动时 PWM 和方向线分属不同 TB6612 通道**，两个通道都无法输出。
@@ -44,8 +44,25 @@ MOTOR_RIGHT = B 通道 = PA11 + PB12/PB13 + TIM2
 | 右轮 PWM | **PA11** | TIM1_CH4 | `PWMB` | 20 kHz |
 | 右轮 IN1 | **PB12** | GPIO 输出 | `AIN1` | 标签名见下方说明 |
 | 右轮 IN2 | **PB13** | GPIO 输出 | `AIN2` | |
-| 右轮编码器 A | **PA1** | TIM2_CH2 | `ENC_RA` | **不耐 5 V** |
-| 右轮编码器 B | **PA0** | TIM2_CH1 | `ENC_RB` | **不耐 5 V** |
+| 右轮编码器 A | **PB3** | TIM2_CH2（重映射） | `ENC_RA` | 5 V 耐受，仍按 3.3 V 用 |
+| 右轮编码器 B | **PA15** | TIM2_CH1（重映射） | `ENC_RB` | 5 V 耐受，仍按 3.3 V 用 |
+
+### 2.1.1 TIM2 重映射（右编码器：PA0/PA1 → PA15/PB3）
+
+右轮编码器已从 PA0/PA1 挪到 **PA15 / PB3**，用 TIM2 的**部分重映射 1**（Partial Remap 1）：
+
+| 通道 | 引脚 | 说明 |
+|---|---|---|
+| TIM2_CH1 / ETR | **PA15** | 默认是 JTDI |
+| TIM2_CH2 | **PB3** | 默认是 JTDO |
+| TIM2_CH3 | PA2 | 名义通道，程序不启用；PA2 仍可当普通 GPIO / USART2 用 |
+| TIM2_CH4 | PA3 | 同上 |
+
+- 由 `HAL_TIM_Encoder_MspInit()` 里的 `__HAL_AFIO_REMAP_TIM2_PARTIAL_1()` 生效。
+- **前提**：`HAL_MspInit()` 里的 `__HAL_AFIO_REMAP_SWJ_NOJTAG()` 必须在（CubeMX 里 SYS → Debug = **Serial Wire** 就会生成）。没有它 PA15/PB3 还是 JTAG 脚，编码器读不到数；SWD（PA13/PA14）下载调试不受影响。
+- 为什么不用全重映射：全重映射把 TIM2_CH3/CH4 放到 **PB10/PB11**，和 USART3 抢脚；部分重映射 1 放到 PA2/PA3，没有冲突。
+- **PB13 为什么不给编码器**：STM32F103 的 PB13 没有任何定时器输入通道（复用只有 TIM1_CH1N 互补输出、SPI2_SCK、I2C2_SCL、USART3_CTS），做不了硬件四倍频；而且它还要做右电机 `AIN2`。
+- 连带变化：**PA0 / PA1 现在空闲**，可以留给 ADC 等外设（5 V 信号仍然不能进）。
 
 ### 2.2 串口与调试
 
@@ -81,7 +98,7 @@ MOTOR_RIGHT = B 通道 = PA11 + PB12/PB13 + TIM2
 .dir_port = AIN1_GPIO_Port,
 .in1_pin = AIN1_Pin,                // PB12
 .in2_pin = AIN2_Pin,                // PB13
-.enc_tim = &htim2,                  // PA0/PA1
+.enc_tim = &htim2,                  // PA15/PB3（TIM2 部分重映射 1）
 ```
 
 ---
@@ -134,7 +151,7 @@ MOTOR_RIGHT = B 通道 = PA11 + PB12/PB13 + TIM2
 
 ## 6. 电气约束
 
-- 编码器必须供 **3.3 V**；PA0 / PA1 **不耐 5 V**。
+- 编码器一律供 **3.3 V**；PA15 / PB3 虽然 5 V 耐受，逻辑高电平也请按 3.3 V 使用。
 - PB6 / PB7 虽可耐 5 V，也建议按 3.3 V 使用。
 - 编码器若是开漏输出，A/B 到 3.3 V 各加 **4.7 kΩ～10 kΩ** 外部上拉；MCU 内部上拉约 40 kΩ，抗干扰较弱。
 - TB6612 的 `STBY` 必须为高，`VM` 接电机电源，MCU/TB6612/电机电源必须共地。
@@ -161,7 +178,8 @@ MOTOR_RIGHT = B 通道 = PA11 + PB12/PB13 + TIM2
 | 现象 | 检查 |
 |---|---|
 | 电机完全不转 | PWM 通道是否 PA8/CH1、PA11/CH4；STBY/VM；共地 |
-| 电机转但 `tot` 不变 | 编码器 3.3 V、A/B 接线、PB6/PB7、PA0/PA1 |
+| 电机转但 `tot` 不变 | 编码器 3.3 V、A/B 接线、PB6/PB7、PA15/PB3 |
+| 右轮 `tot` 恒 0，PA15/PB3 上确实有脉冲 | 重映射没生效：检查 `__HAL_AFIO_REMAP_TIM2_PARTIAL_1()` 和 `__HAL_AFIO_REMAP_SWJ_NOJTAG()` |
 | `tot` 稳定为负 | 改对应的 `MOTOR_*_ENC_INVERTED` |
 | `tot` 在 0 附近 ±1 跳 | 一相缺失/悬空/干扰，查 A/B 线和外部上拉 |
 | 转的方向和预期相反 | 改对应的 `MOTOR_*_DIR_INVERTED` |

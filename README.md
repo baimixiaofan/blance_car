@@ -16,7 +16,7 @@
 | PB12 | GPIO 输出 | Push-Pull，初始低 | `AIN1` | 右轮方向 1（B 通道） |
 | PB13 | GPIO 输出 | Push-Pull，初始低 | `AIN2` | 右轮方向 2（B 通道） |
 | PB6 / PB7 | TIM4_CH1 / CH2 | Encoder Mode TI1 and TI2 | `ENC_LA` / `ENC_LB` | 左轮编码器 |
-| PA0 / PA1 | TIM2_CH1 / CH2 | Encoder Mode TI1 and TI2 | `ENC_RB` / `ENC_RA` | 右轮编码器 |
+| PA15 / PB3 | TIM2_CH1 / CH2 | Encoder Mode TI1 and TI2（TIM2 部分重映射 1） | `ENC_RB` / `ENC_RA` | 右轮编码器 |
 | PA9 / PA10 | USART1_TX / RX | Asynchronous 115200 | `UART1_TX` / `UART1_RX` | 主串口 |
 | PB10 / PB11 | USART3_TX / RX | Asynchronous 115200 | `BT_TX` / `BT_RX` | 镜像/蓝牙 |
 | PA13 / PA14 | SWD | Serial Wire | — | 下载调试 |
@@ -26,7 +26,7 @@
 | 电机 | PWM | 方向 | 编码器 |
 |---|---|---|---|
 | 左轮（A 通道） | PA8 / TIM1_CH1 | PB14 / PB15 | PB6 / PB7 / TIM4 |
-| 右轮（B 通道） | PA11 / TIM1_CH4 | PB12 / PB13 | PA0 / PA1 / TIM2 |
+| 右轮（B 通道） | PA11 / TIM1_CH4 | PB12 / PB13 | PA15 / PB3 / TIM2（重映射） |
 
 > CubeMX 标签 `AIN1/AIN2` 实际接在 PB12/PB13（B 通道），`BIN1/BIN2` 实际接在 PB14/PB15（A 通道），标签名和 A/B 通道名是反的；接线以引脚号为准。完整说明见 `doc/pin_config.md`。
 
@@ -123,16 +123,14 @@ T=...ms | L d=+... tot=+... rev=+x.xx ang=+xxxx.xx rpm=+xx.x | R ...
 
 ## 3. 当前 main.c
 
-当前 `main.c` 是**左轮四圈往返 + 编码器回传**版本：
+当前 `main.c` 是**左电机四圈往返 + 编码器回传**版本：
 
 1. 完成 CubeMX 生成的外设初始化；
 2. 调用 `Motor_Init()` 取得左右电机指针，并启动编码器串口；
-3. 左轮以 50% 占空比**正转 4 圈**；
+3. 左电机以 50% 占空比**正转 4 圈**；
 4. 停 0.5 s 后**反转 4 圈**；
 5. 转动期间持续调用 `Motor_Update()` 和 `EncoderUsart_Task()`，编码器数据实时发到 USART1；
 6. 转动结束后停止电机，进入主循环继续更新编码器和串口。
-
-串口默认在计数变化时每 100 ms 输出一行，包含左右轮的增量、累计计数、圈数、角度和 RPM。
 
 ---
 
@@ -152,7 +150,8 @@ cmake --build build/homework
 
 ## 5. 上板注意
 
-- 编码器必须供 **3.3 V**；PA0 / PA1 不耐 5 V。
+- 编码器必须供 **3.3 V**；PA15 / PB3 虽 5 V 耐受也按 3.3 V 用。
+- PA15 / PB3 默认是 JTAG 脚，`HAL_MspInit()` 里的 `__HAL_AFIO_REMAP_SWJ_NOJTAG()` 不能删；下载只能用 SWD。
 - TB6612 的 `STBY` 必须为高，`VM` 接电机电源，所有地必须共地。
 - 第一次测试先抬起车轮。
 - 正反转或编码器计数方向不对时，优先改 `motor.h` 里的四个反相宏，不要改接线。
@@ -166,6 +165,7 @@ cmake --build build/homework
 | `doc/motor_api.md` | **当前有效**：电机模块全部接口、参数、返回值、示例 |
 | `doc/encoder_usart_api.md` | **当前有效**：编码器串口输出接口、格式、示例 |
 | `doc/pin_config.md` | **当前有效**：修正后的电机/编码器引脚与通道配对 |
+| `doc/HANDOVER.md` | **交接文档**：现状、遗留问题、验证清单、下一步 |
 | `引脚配置.md` | 早期引脚记录，左右命名和编码器配对以 `doc/pin_config.md` 为准 |
 | `TEST_GUIDE.md` | 之前作业二的记录，对应测试代码已删除，仅供参考 |
 | `HW3_GUIDE.md` | 之前作业三的记录，对应测试代码已删除，仅供参考 |

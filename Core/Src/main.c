@@ -66,16 +66,7 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static void wait_left_finished(Motor *left_motor, Motor *right_motor)
-{
-  while (Motor_IsBusy(left_motor) != 0U)
-  {
-    Motor_Update(left_motor);
-    Motor_Update(right_motor);
-    EncoderUsart_Task();
-    HAL_Delay(1U);
-  }
-}
+
 /* USER CODE END 0 */
 
 /**
@@ -116,21 +107,11 @@ int main(void)
   Motor *left_motor = Motor_Init(MOTOR_LEFT);
   Motor *right_motor = Motor_Init(MOTOR_RIGHT);
 
-  /* 左轮正转 4 圈，转动期间持续回传编码器数据 */
   EncoderUsart_Init(left_motor);
   EncoderUsart_Init(right_motor);
 
-  Motor_Move(left_motor, 50U, MOTOR_DIR_FORWARD, 4.0f);
-  wait_left_finished(left_motor, right_motor);
-
-  HAL_Delay(500U);
-
-  /* 左轮反转 4 圈 */
-  Motor_Move(left_motor, 50U, MOTOR_DIR_REVERSE, 4.0f);
-  wait_left_finished(left_motor, right_motor);
-
-  Motor_Stop(left_motor);
-  Motor_Stop(right_motor);
+  /* 左电机 100% 持续正转（无圈数限制），串口持续回传编码器数据 */
+  Motor_SetDirSpeed(left_motor, MOTOR_DIR_FORWARD, 100U);
   /* USER CODE END 2 */
 
   /* Infinite loop */

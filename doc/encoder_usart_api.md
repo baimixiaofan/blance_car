@@ -125,7 +125,7 @@ void EncoderUsart_Init(Motor *motor);
 === Encoder USART ===
 USART1 PA9/PA10 + USART3 PB10/PB11, 115200 8N1
 LEFT  ready: TIM4 (PB6/PB7), 1560 counts/rev
-RIGHT ready: TIM2 (PA0/PA1), 1560 counts/rev
+RIGHT ready: TIM2 (PA15/PB3), 1560 counts/rev
 ```
 
 其中标题和串口参数只在第一次调用时打印。
@@ -294,7 +294,7 @@ while (1)
 }
 ```
 
-当前 `main.c` 在左轮正转 4 圈、停 0.5 s、反转 4 圈的过程中调用 `EncoderUsart_Init()` 和 `EncoderUsart_Task()`，串口会持续输出编码器数据（默认每 100 ms 采样，计数变化时发送）。
+当前 `main.c` 不驱动电机，只初始化编码器和串口；手动转动车轮时，`EncoderUsart_Task()` 会输出 L/R 的计数、圈数、角度和 RPM。
 
 ### 10.2 手动转轮观察计数
 
@@ -360,7 +360,7 @@ while (Motor_IsBusy(left_motor)) {
 | 完全没有输出 | USB-TTL RX 没接 PA9、没共地、波特率不对 | 检查 PA9→RXD、GND、115200 8N1 |
 | 只有启动信息，之后没有数据 | 车轮没转，默认模式不发送 | 转一下车轮，或把 `ENCODER_USART_ALWAYS_PRINT` 改为 1 |
 | 输出乱码 | 波特率/数据格式不对，或电平不匹配 | 检查 115200 8N1 和 3.3 V 电平 |
-| `tot` 一直是 0 | 编码器没供电、A/B 没接、TIM 没启动 | 检查编码器 3.3 V、GND、PB6/PB7、PA0/PA1 |
+| `tot` 一直是 0 | 编码器没供电、A/B 没接、TIM 没启动 | 检查编码器 3.3 V、GND、PB6/PB7、PA15/PB3 |
 | 正转时 `tot` 为负 | 编码器计数方向相反 | 改 `MOTOR_LEFT_ENC_INVERTED` 或 `MOTOR_RIGHT_ENC_INVERTED` |
 | `rpm` 一直是 0 | 计数没有变化，或采样窗口内没有脉冲 | 检查编码器接线和 `Motor_Update()` 是否在调用 |
 | `d` 偶尔为 0 但仍输出一行 | 停转后的最后一次采样 | 正常现象，之后不再发送 |

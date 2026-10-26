@@ -124,14 +124,24 @@ void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* htim_encoder)
     __HAL_RCC_TIM2_CLK_ENABLE();
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
     /**TIM2 GPIO Configuration
-    PA0-WKUP     ------> TIM2_CH1
-    PA1     ------> TIM2_CH2
+    PA15     ------> TIM2_CH1
+    PB3     ------> TIM2_CH2
     */
-    GPIO_InitStruct.Pin = ENC_RA_Pin|ENC_RB_Pin;
+    GPIO_InitStruct.Pin = ENC_RB_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_Init(ENC_RB_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = ENC_RA_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(ENC_RA_GPIO_Port, &GPIO_InitStruct);
+
+    /* TIM2 重映射：CH1/ETR = PA15，CH2 = PB3，CH3 = PA2，CH4 = PA3。
+       PA15(JTDI) / PB3(JTDO) 依赖 HAL_MspInit 里已调用的 SWJ_NOJTAG（只关 JTAG、保留 SWD）。 */
+    __HAL_AFIO_REMAP_TIM2_PARTIAL_1();
 
     /* USER CODE BEGIN TIM2_MspInit 1 */
 
@@ -226,10 +236,11 @@ void HAL_TIM_Encoder_MspDeInit(TIM_HandleTypeDef* htim_encoder)
     __HAL_RCC_TIM2_CLK_DISABLE();
 
     /**TIM2 GPIO Configuration
-    PA0-WKUP     ------> TIM2_CH1
-    PA1     ------> TIM2_CH2
+    PA15     ------> TIM2_CH1
+    PB3     ------> TIM2_CH2
     */
-    HAL_GPIO_DeInit(GPIOA, ENC_RA_Pin|ENC_RB_Pin);
+    HAL_GPIO_DeInit(GPIOA, ENC_RB_Pin);
+    HAL_GPIO_DeInit(GPIOB, ENC_RA_Pin);
 
     /* USER CODE BEGIN TIM2_MspDeInit 1 */
 
