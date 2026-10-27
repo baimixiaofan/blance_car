@@ -87,6 +87,8 @@ void Error_Handler(void);
 #define ENC_LA_GPIO_Port GPIOB
 #define ENC_LB_Pin GPIO_PIN_7
 #define ENC_LB_GPIO_Port GPIOB
+#define KEY1_Pin GPIO_PIN_5
+#define KEY1_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 

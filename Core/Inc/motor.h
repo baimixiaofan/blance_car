@@ -20,7 +20,8 @@
 
 /* 如果实测方向与标注相反，把对应宏改为 1，不需要改接线。 */
 #define MOTOR_LEFT_DIR_INVERTED     0
-#define MOTOR_RIGHT_DIR_INVERTED    0
+/* 右通道方向线物理反接（IN1/IN2 与左通道对调），置 1 后左右都用 MOTOR_DIR_FORWARD */
+#define MOTOR_RIGHT_DIR_INVERTED    1
 #define MOTOR_LEFT_ENC_INVERTED     0
 #define MOTOR_RIGHT_ENC_INVERTED    0
 

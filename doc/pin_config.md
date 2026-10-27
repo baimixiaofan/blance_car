@@ -74,6 +74,7 @@ MOTOR_RIGHT = B 通道 = PA11 + PB12/PB13 + TIM2 (PA15/PB3)
 | 串口 3 RX | PB11 | USART3_RX | 镜像/蓝牙 |
 | SWDIO | PA13 | SWD | 下载调试 |
 | SWCLK | PA14 | SWD | 下载调试 |
+| 用户按键 | PA5 | GPIO 输入 | `KEY1`，输入上拉，**按下为低**；每按一次左右电机占空比一起 +20% |
 
 ---
 

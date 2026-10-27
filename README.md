@@ -17,6 +17,7 @@
 | PB13 | GPIO 输出 | Push-Pull，初始低 | `AIN2` | 右轮方向 2（B 通道） |
 | PB6 / PB7 | TIM4_CH1 / CH2 | Encoder Mode TI1 and TI2 | `ENC_LA` / `ENC_LB` | 左轮编码器 |
 | PA15 / PB3 | TIM2_CH1 / CH2 | Encoder Mode TI1 and TI2（TIM2 部分重映射 1） | `ENC_RB` / `ENC_RA` | 右轮编码器 |
+| PA5 | GPIO 输入 | Input，Pull-up | `KEY1` | 用户按键，按下为低 |
 | PA9 / PA10 | USART1_TX / RX | Asynchronous 115200 | `UART1_TX` / `UART1_RX` | 主串口 |
 | PB10 / PB11 | USART3_TX / RX | Asynchronous 115200 | `BT_TX` / `BT_RX` | 镜像/蓝牙 |
 | PA13 / PA14 | SWD | Serial Wire | — | 下载调试 |
@@ -123,14 +124,18 @@ T=...ms | L d=+... tot=+... rev=+x.xx ang=+xxxx.xx rpm=+xx.x | R ...
 
 ## 3. 当前 main.c
 
-当前 `main.c` 是**左电机四圈往返 + 编码器回传**版本：
+当前 `main.c` 是**左右电机一直转 + PA5 按键调速**版本：
 
 1. 完成 CubeMX 生成的外设初始化；
-2. 调用 `Motor_Init()` 取得左右电机指针，并启动编码器串口；
-3. 左电机以 50% 占空比**正转 4 圈**；
-4. 停 0.5 s 后**反转 4 圈**；
-5. 转动期间持续调用 `Motor_Update()` 和 `EncoderUsart_Task()`，编码器数据实时发到 USART1；
-6. 转动结束后停止电机，进入主循环继续更新编码器和串口。
+2. `Motor_Init()` 取得左右电机指针，并启动编码器串口回传；
+3. **左右两轮**都以 **20%** 占空比持续正转，**没有圈数限制**，直到复位/断电；
+4. 主循环检测 **PA5**（输入上拉、按下为低）：每按一次左右**同时**跳档，20 → 40 → 60 → 80 → 100 → 回到 20；按住不放只算一次，松手再按才算下一次；
+5. 每次换档串口补一行 `KEY: duty -> xx%`（USART1 + USART3 镜像），用来确认按键被识别；
+6. 同时持续调用 `Motor_Update()` 和 `EncoderUsart_Task()`。
+
+档位和消抖参数在 `main.c` 的 `USER CODE PD` 区：`DUTY_STEP_PERCENT`、`DUTY_MIN_PERCENT`、`DUTY_MAX_PERCENT`、`KEY_DEBOUNCE_MS`。
+
+> 右通道方向线是物理反接的，`motor.h` 里 `MOTOR_RIGHT_DIR_INVERTED = 1`，所以代码里两边都写 `MOTOR_DIR_FORWARD` 时两轮同向。
 
 ---
 

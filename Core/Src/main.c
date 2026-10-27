@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 #include "motor.h"
 #include "encoder_usart.h"
 /* USER CODE END Includes */
@@ -32,7 +33,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+/* 按键调速：PA5 输入上拉，按下为低电平，每按一次占空比 +20%，到 100% 后回到 20% */
+#define DUTY_STEP_PERCENT   20U
+#define DUTY_MIN_PERCENT    20U
+#define DUTY_MAX_PERCENT    100U
+#define KEY_DEBOUNCE_MS     20U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -49,7 +54,7 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-
+static uint8_t s_duty_percent = DUTY_MIN_PERCENT;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,7 +71,67 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/*
+ * PA5 按键消抖：返回 1 表示检测到一次新的“按下”（高→低跳变）。
+ * 采样粒度由主循环决定（约 1 ms），电平需稳定 KEY_DEBOUNCE_MS 才被承认。
+ */
+static uint8_t key1_pressed(void)
+{
+  static uint8_t  s_level = 1U;      /* 消抖后的稳定电平：1 = 松开，0 = 按下 */
+  static uint8_t  s_level_last = 1U; /* 上一次采样的原始电平 */
+  static uint8_t  s_started = 0U;
+  static uint32_t s_change_ms = 0U;
 
+  uint32_t now = HAL_GetTick();
+  uint8_t  level = (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET) ? 0U : 1U;
+
+  if (s_started == 0U)
+  {
+    /* 第一次调用以当前电平为基准，避免上电时按键被按住就多加一档 */
+    s_started = 1U;
+    s_level = level;
+    s_level_last = level;
+    s_change_ms = now;
+    return 0U;
+  }
+
+  if (level != s_level_last)
+  {
+    s_level_last = level;
+    s_change_ms = now;
+  }
+
+  if (((uint32_t)(now - s_change_ms) >= KEY_DEBOUNCE_MS) && (level != s_level))
+  {
+    s_level = level;
+    if (s_level == 0U)
+    {
+      return 1U;
+    }
+  }
+
+  return 0U;
+}
+
+/* 占空比变化时镜像发到 USART1 / USART3，方便上板确认按键真的按到了 */
+static void report_duty(uint8_t percent)
+{
+  char buf[40];
+  int  len;
+
+  len = snprintf(buf, sizeof(buf), "KEY: duty -> %u%%\r\n", (unsigned)percent);
+  if (len <= 0)
+  {
+    return;
+  }
+  if (len >= (int)sizeof(buf))
+  {
+    len = (int)sizeof(buf) - 1;
+  }
+
+  HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)len, 100U);
+  HAL_UART_Transmit(&huart3, (uint8_t *)buf, (uint16_t)len, 100U);
+}
 /* USER CODE END 0 */
 
 /**
@@ -110,8 +175,9 @@ int main(void)
   EncoderUsart_Init(left_motor);
   EncoderUsart_Init(right_motor);
 
-  /* 左电机 100% 持续正转（无圈数限制），串口持续回传编码器数据 */
-  Motor_SetDirSpeed(left_motor, MOTOR_DIR_FORWARD, 100U);
+  /* 左右电机一直正转，初始 20%；PA5 每按一次 +20%，到 100% 后回到 20% */
+  Motor_SetDirSpeed(left_motor, MOTOR_DIR_FORWARD, DUTY_MIN_PERCENT);
+  Motor_SetDirSpeed(right_motor, MOTOR_DIR_FORWARD, DUTY_MIN_PERCENT);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -121,6 +187,22 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (key1_pressed() != 0U)
+    {
+      if ((uint16_t)s_duty_percent + DUTY_STEP_PERCENT > DUTY_MAX_PERCENT)
+      {
+        s_duty_percent = DUTY_MIN_PERCENT;      /* 100% 后再按回到 20% */
+      }
+      else
+      {
+        s_duty_percent = (uint8_t)(s_duty_percent + DUTY_STEP_PERCENT);
+      }
+
+      Motor_SetSpeed(left_motor, s_duty_percent);
+      Motor_SetSpeed(right_motor, s_duty_percent);
+      report_duty(s_duty_percent);
+    }
+
     Motor_Update(left_motor);
     Motor_Update(right_motor);
     EncoderUsart_Task();
@@ -433,6 +515,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : KEY1_Pin */
+  GPIO_InitStruct.Pin = KEY1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(KEY1_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
